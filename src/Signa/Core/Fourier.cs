@@ -3,53 +3,37 @@
 namespace Signa.Core;
 public class Fourier
 {
-    public static Complex[] FFT(int n, int[] signal)
+    private readonly Complex[] _twiddleFactorForFFT;
+
+    private readonly Complex[] _twiddleFactorForIFFT;
+
     public Fourier(int n)
     {
-        if (!BitOperations.IsPow2(N))
+        if (!BitOperations.IsPow2(n))
         {
             throw new ArgumentException("");
         }
         _twiddleFactorForFFT = CalculateTwiddleFactor(n);
+        _twiddleFactorForIFFT = TwiddleFactorForIFFTFrom(_twiddleFactorForFFT);
         N = n;
     }
 
     public int N { get; }
 
-    public Complex[] FFT(int[] signal)
-        {
-        // 指定したNを超えている場合は信号を切り取る。
-        if (signal.Length > N)
-        {
-            signal = signal.Take(N).ToArray();
-        }
-        // 指定したNより小さい信号が与えられた場合は0-paddingする
-        else if (signal.Length < N)
-        {
-            var newArray = new int[N];
-            int i;
-            for (i = 0; i < signal.Length; i++)
-            {
-                newArray[i] = signal[i];
-            }
-            while (i < newArray.Length)
-            {
-                newArray[i] = 0;
-            }
-            signal = newArray;
-        }
+    public Complex[] FFT<T>(T[] signal) where T : struct, INumber<T>
+    {
+        signal = ArrangeSize(N, signal);
 
         // ビットリバースソートし、結果用配列に格納する
         BitReverseSorter.Sort(signal);
         var result = new Complex[N];
         for (int i = 0; i < result.Length; i++)
         {
-            result[i] = new Complex(signal[i], 0);
+            result[i] = new Complex(double.CreateChecked(signal[i]), 0);
         }
-        FFTInternal(0, n, twiddleFactor, result);
 
         // N点FFTを実行
-        FFTInternal(0, N, _twiddleFactorForFFT, result);
+        ButterflyComputation(0, N, _twiddleFactorForFFT, result);
 
         // 1/Nを乗ずる
         for (int i = 0; i < result.Length; i++)
@@ -59,14 +43,26 @@ public class Fourier
         return result;
     }
 
-    private static void FFTInternal(int startIndex, int n, Complex[] twiddleFactor, Complex[] result)
+    public Complex[] IFFT(Complex[] spectrum)
+    {
+        spectrum = ArrangeSize(N, spectrum);
+        // スペクトルをビットリバースソートする
+        BitReverseSorter.Sort(spectrum);
+        var result = new Complex[N];
+        Array.Copy(spectrum, result, spectrum.Length);
+        // IFFTを実行する
+        ButterflyComputation(0, N, _twiddleFactorForIFFT, result);
+        return result;
+    }
+
+    private static void ButterflyComputation(int startIndex, int n, Complex[] twiddleFactor, Complex[] result)
     {
         int halfCount = n / 2;
         // 2点まで分解してFFTする
         if (halfCount != 1)
         {
-            FFTInternal(startIndex, halfCount, twiddleFactor, result);
-            FFTInternal(startIndex + halfCount, halfCount, twiddleFactor, result);
+            ButterflyComputation(startIndex, halfCount, twiddleFactor, result);
+            ButterflyComputation(startIndex + halfCount, halfCount, twiddleFactor, result);
         }
 
         // result用のindex
@@ -95,6 +91,28 @@ public class Fourier
         }
     }
 
+    private static T[] ArrangeSize<T>(int n, T[] from) where T : struct
+    {
+        // 指定したNを超えている場合は信号を切り取る。
+        if (from.Length > n)
+        {
+            return from.Take(n).ToArray();
+        }
+        // 指定したNより小さい信号が与えられた場合は0-paddingする
+        else if (from.Length < n)
+        {
+            var newArray = new T[n];
+            int i;
+            for (i = 0; i < from.Length; i++)
+            {
+                newArray[i] = from[i];
+            }
+            return newArray;
+        }
+        // 上記以外は操作不要
+        return from;
+    }
+
     private static Complex[] CalculateTwiddleFactor(int n)
     {
         var result = new Complex[n];
@@ -105,5 +123,18 @@ public class Fourier
         }
 
         return result;
+    }
+
+    private static Complex[] TwiddleFactorForIFFTFrom(Complex[] forFFT)
+    {
+        var forIFFT = new Complex[forFFT.Length];
+        forIFFT[0] = forFFT[0];
+
+        for (int i = 1; i < forFFT.Length; i++)
+        {
+            forIFFT[i] = forFFT[forFFT.Length - i];
+        }
+
+        return forIFFT;
     }
 }
